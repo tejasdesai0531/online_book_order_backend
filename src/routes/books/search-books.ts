@@ -1,32 +1,9 @@
 import express, { Response, Request} from 'express'
-import { checkSchema, query } from 'express-validator';
+import { query } from 'express-validator';
 import axios from 'axios';
 import { validateRequest } from '../../middlewares/validate-request';
 
 const router = express.Router()
-
-interface Book {
-    id: string,
-    title: string,
-    authors: [string],
-    publisher: string,
-    publishedDate: string,
-    description: string,
-    pageCount: number,
-    categories: [string],
-    imageLinks: {
-        smallThumbnail: string,
-        thumbnail: string
-    },
-    listPrice: {
-        amount: number,
-        currencyCode: string
-    },
-    retailPrice: {
-        amount: number,
-        currencyCode: string
-    }
-}
 
 router.get(
     '/search',
@@ -37,11 +14,16 @@ router.get(
         query('searchText')
             .isLength({min: 1})
             .withMessage('searchText is required'),
+        query('page')
+            .default(0)
+            .isInt({min: 0})
     ],
     validateRequest,
     async (req: Request, res: Response) => {
 
-        const { searchBy, searchText } = req.query
+        const { searchBy, searchText, page } = req.query
+
+        const startIndex = Number(page) * 10
 
         let q = ""
         if (searchBy === 'all') {
@@ -59,32 +41,29 @@ router.get(
         let params = {
             q: q,
             filter: 'paid-ebooks',
+            startIndex: startIndex,
             key: process.env.GOOGLE_BOOKS_API_KEY
         }
 
         let response = (await axios.get('https://www.googleapis.com/books/v1/volumes', { params: params })).data
 
-        let books: Book[] = []
+        let books = (response.items || []).map((item: any) => {
 
-        if(response.totalItems > 0) {
-            response.items.forEach((item: any) => {
+            return {
+                id: item.id,
+                title: item.volumeInfo.title,
+                authors: item.volumeInfo.authors,
+                publisher: item.volumeInfo.publisher,
+                publishedDate: item.volumeInfo.publishedDate,
+                description: item.volumeInfo.description,
+                pageCount: item.volumeInfo.pageCount,
+                categories: item.volumeInfo.categories,
+                imageLinks: item.volumeInfo.imageLinks,
+                listPrice: item.saleInfo.listPrice,
+                retailPrice: item.saleInfo.retailPrice
+            }
 
-                books.push({
-                    id: item.id,
-                    title: item.volumeInfo.title,
-                    authors: item.volumeInfo.authors,
-                    publisher: item.volumeInfo.publisher,
-                    publishedDate: item.volumeInfo.publishedDate,
-                    description: item.volumeInfo.description,
-                    pageCount: item.volumeInfo.pageCount,
-                    categories: item.volumeInfo.categories,
-                    imageLinks: item.volumeInfo.imageLinks,
-                    listPrice: item.saleInfo.listPrice,
-                    retailPrice: item.saleInfo.retailPrice
-                })
-    
-            })
-        }
+        })
 
         res.send({ 
             totalItems: response.totalItems,
